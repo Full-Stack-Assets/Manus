@@ -1,0 +1,34 @@
+manus-js-clone/
+├── .env.local.example
+├── .gitignore
+├── next.config.js
+├── package.json
+├── tsconfig.json
+├── tailwind.config.ts
+├── postcss.config.mjs
+├── app/
+│   ├── globals.css
+│   ├── layout.tsx
+│   ├── page.tsx
+│   └── api/
+│       ├── agent/
+│       │   ├── route.ts
+│       │   └── [taskId]/
+│       │       └── files/
+│       │           └── [filename]/
+│       │               └── route.ts
+│       └── cron/
+│           └── route.ts          # Optional: for background processing
+├── lib/
+│   ├── agent/
+│   │   ├── graph.ts
+│   │   ├── state.ts
+│   │   ├── memory.ts
+│   │   └── tools/
+│   │       ├── index.ts
+│   │       ├── webSearch.ts
+│   │       ├── pythonExec.ts
+│   │       └── fileIO.ts
+│   └── store.ts                  # Simple KV store for task status
+└── public/
+    └── (empty)
