@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
-import { agentApp } from "@/lib/agent/graph";
-import { AgentState } from "@/lib/agent/state";
-import { taskStore } from "@/lib/store";
+import { agentApp } from "../../../lib/agent/graph";
+import { AgentState } from "../../../lib/agent/state";
+import { taskStore } from "../../../lib/store";
 
-export const maxDuration = 60; // Set max duration to 60 seconds (Hobby plan)
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,7 +26,6 @@ export async function POST(req: NextRequest) {
       messages: [],
     };
 
-    // Run agent in background (don't await)
     agentApp.invoke(initialState).catch((err) => {
       console.error(`Agent error for task ${taskId}:`, err);
       taskStore.set(taskId, "failed");
