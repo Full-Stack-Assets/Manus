@@ -8,7 +8,6 @@ export async function GET(
 ) {
   const { taskId, filename } = params;
   
-  // Security: only allow specific filenames
   const allowedFiles = ["task_plan.md", "findings.md", "progress.md"];
   if (!allowedFiles.includes(filename)) {
     return new NextResponse("File not allowed", { status: 403 });
