@@ -23,7 +23,8 @@ export async function readFile(args: { taskId: string; filePath: string }): Prom
 export async function writeFile(args: { taskId: string; filePath: string; content: string }): Promise<string> {
   try {
     const resolved = resolveTaskPath(args.taskId, args.filePath);
-    await fs.writeFile(resolved, args.content);
+    await fs.mkdir(path.dirname(resolved), { recursive: true });
+    await fs.writeFile(resolved, args.content, "utf-8");
     return `File written successfully to ${args.filePath}`;
   } catch (err) {
     return `Error writing file: ${err}`;
