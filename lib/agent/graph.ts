@@ -5,6 +5,7 @@ import { AgentState } from "./state";
 import { MemoryFileManager } from "./memory";
 import { tools } from "./tools";
 import { taskStore } from "../store";
+import { asText } from "./text";
 
 // --- Guardrails ------------------------------------------------------------
 // These bound total work (and therefore token spend) deterministically, which
@@ -25,27 +26,11 @@ function getLlm() {
   });
 }
 
-/** Safely coerce a LangChain message content (string | parts[]) to text. */
-function asText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (part && typeof part === "object" && "text" in part) {
-          return String((part as { text: unknown }).text ?? "");
-        }
-        return "";
-      })
-      .join("");
-  }
-  return content == null ? "" : String(content);
-}
-
 async function planningNode(state: AgentState): Promise<Partial<AgentState>> {
   const memory = new MemoryFileManager(state.taskId);
   await memory.init();
   taskStore.set(state.taskId, "running");
+  await memory.writeStatus("running");
 
   const llm = getLlm();
   const system = new SystemMessage(
@@ -227,6 +212,7 @@ async function summaryNode(state: AgentState): Promise<Partial<AgentState>> {
   await memory.writeSummary(finalOutput);
   await memory.logProgress("Task completed", "Summary generated");
   taskStore.set(state.taskId, "completed");
+  await memory.writeStatus("completed");
 
   return { finalOutput };
 }

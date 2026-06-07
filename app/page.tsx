@@ -25,6 +25,7 @@ const STATUS_META: Record<
 
 interface TaskState {
   status: string;
+  error?: string | null;
   plan: string;
   findings: string;
   progress: string;
@@ -88,6 +89,7 @@ export default function Home() {
         const data: TaskState = await res.json();
         setState({
           status: data.status,
+          error: data.error,
           plan: data.plan,
           findings: data.findings,
           progress: data.progress,
@@ -241,6 +243,20 @@ export default function Home() {
                 Task <code className="bg-gray-900 px-1.5 py-0.5 rounded text-gray-400">{taskId.slice(0, 8)}</code>
               </span>
             </div>
+
+            {state.status === "failed" && (
+              <div
+                role="alert"
+                className="mb-6 rounded-xl border border-red-800 bg-red-950/60 px-4 py-3 text-sm text-red-200"
+              >
+                The task failed before completing.
+                {state.error ? (
+                  <span className="block mt-1 text-red-300/80 font-mono text-xs">
+                    {state.error}
+                  </span>
+                ) : null}
+              </div>
+            )}
 
             {/* Final output */}
             {state.summary ? (

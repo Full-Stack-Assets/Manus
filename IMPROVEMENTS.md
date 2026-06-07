@@ -11,6 +11,11 @@ loop/cost + verification + final-output cluster). Everything else is open.
 
 ## 1. Code review findings
 
+> **Progress:** 21 of 26 findings are now done or partially done. Remaining
+> open: #6 (full durability — partial), #7 (native tool-calling — partial),
+> #15→done, #16 (sandbox), #17→done. Highest remaining value: a real sandbox
+> and the queue/worker for true multi-instance durability.
+
 ### 🔴 High priority — bugs & security
 
 1. **Path traversal in the file-serving route** — `taskId` was interpolated
@@ -22,17 +27,21 @@ loop/cost + verification + final-output cluster). Everything else is open.
    retry-then-skip policy. **✅ Done** (`lib/agent/graph.ts`).
 3. **Wrong variable in finding log** — interpolated a raw object
    (`[object Object]`); now uses the stringified result. **✅ Done**.
-4. **Duplicate/typo config `tsconfg.json`** — dead file that conflicts with
-   `tsconfig.json` (differing `strict` / `moduleResolution`). _Open: delete
-   it and enable `strict: true` in the real config._
-5. **Stray junk file `public/N`** — 1-byte accidental artifact. _Open: remove._
+4. **Duplicate/typo config `tsconfg.json`** — deleted; `moduleResolution`
+   aligned to Next's recommended `bundler`. **✅ Done** (note: `strict: true`
+   deferred — LangGraph 1.x channel generics clash with strict in `graph.ts`,
+   tracked as follow-up).
+5. **Stray junk file `public/N`** — removed; replaced with a real
+   `public/robots.txt`. **✅ Done**.
 
 ### 🟠 Medium — architecture & robustness
 
 6. **Fire-and-forget execution + in-memory store is non-durable** — detached
    `agentApp.invoke()` and a `Map`-based `taskStore` only work on a single,
-   long-lived instance. _Open: queue/worker + persistent status; the markdown
-   files are the real source of truth, so `taskStore` is the weak link._
+   long-lived instance. **✅ partial:** status is now persisted to a durable
+   `status.json` (read back by the API, surviving restarts on a shared volume),
+   with the in-memory map kept as a hot-path cache. _Open: queue/worker for
+   true multi-instance execution._
 7. **Brittle tool-call parsing** — relies on the LLM emitting raw JSON. Made
    tolerant of ```` ```json ```` fences as a stopgap **✅ partial**; _open:
    move to native `llm.bindTools(...)`._
@@ -45,19 +54,22 @@ loop/cost + verification + final-output cluster). Everything else is open.
 
 ### 🟡 Lower — quality, DX, polish
 
-11. **No tests** — _open: unit-test `resolveTaskPath`, the tool-call parser,
-    arg schemas, and the verification retry/skip logic._
+11. **No tests** — added a Vitest suite (16 tests) covering `resolveTaskPath`
+    traversal, `parsePlan`, `asText`, `isValidTaskId`, tool arg schemas, and a
+    file round-trip. **✅ Done**.
 12. **No error surfacing in UI** — failures only hit `console.error`. Added an
     error banner + final-output panel. **✅ Done** (`app/page.tsx`).
-13. **No CI** — _open: GitHub Actions running `lint` + `build` (+ tests)._
+13. **No CI** — added `.github/workflows/ci.yml` running `npm ci`, lint, tests,
+    and build on every push/PR. **✅ Done**.
 14. **Inconsistent naming** — `manus-js-clone` vs "Taskflow" vs "Manus Clone".
     User-facing surfaces standardized on **Taskflow** (layout metadata + UI).
     **✅ partial** (package name left as-is to avoid churn).
-15. **Stale Vercel comments** contradict the README. _Open: clean up._
+15. **Stale Vercel comments** contradict the README — cleaned up in `store.ts`
+    and `memory.ts`. **✅ Done**.
 16. **`execute_python` is a permanent stub** — _open: wire a real sandbox
     (see §2) or drop it from the advertised tool list._
-17. **Missing `LICENSE`**; README env table should note `SERPER_API_KEY` is
-    optional. _Open._
+17. **Missing `LICENSE`** — added MIT `LICENSE`; README now documents the
+    `SERPER_API_KEY` fallback and a full scripts table. **✅ Done**.
 18. **Unbounded plan crashed the graph** — default `recursionLimit` (25) threw
     `GraphRecursionError` past ~12 steps. Added explicit `MAX_PLAN_STEPS`,
     `MAX_STEP_ATTEMPTS`, and a computed `RECURSION_LIMIT`. **✅ Done**.
@@ -69,13 +81,14 @@ loop/cost + verification + final-output cluster). Everything else is open.
 21. **Chatty polling (N+1)** — replaced 4–5 requests/tick with a single
     `GET /api/agent/[taskId]` returning status + all docs. **✅ Done**
     (streaming still a future option).
-22. **Drop the `uuid` dependency** — Node 20 has `crypto.randomUUID()`. _Open._
-23. **No `engines` field** in `package.json`. _Open: `"node": ">=20"`._
+22. **Drop the `uuid` dependency** — replaced with Node's `crypto.randomUUID()`;
+    removed `uuid` + `@types/uuid`. **✅ Done**.
+23. **No `engines` field** — added `"node": ">=20"`. **✅ Done**.
 24. **Accessibility gaps** — labeled textarea, `aria-live` status region,
     `role="progressbar"` on the plan bar, `role="alert"` errors, keyboard
     submit (⌘/Ctrl+Enter). **✅ Done**.
-25. **`tsconfig` drift** — `moduleResolution` differs between the two files;
-    Next recommends `bundler`. _Open (folds into #4)._
+25. **`tsconfig` drift** — resolved by deleting the typo file and setting
+    `moduleResolution: bundler`. **✅ Done** (`strict` deferred, see #4).
 26. **No `metadataBase`** in `layout.tsx` — added, with full OpenGraph/title
     template metadata and a `viewport` export. **✅ Done**.
 
@@ -90,6 +103,20 @@ loop/cost + verification + final-output cluster). Everything else is open.
   indicator, loading/empty states, and Copy / Download for the result.
 - Refined dark theme, custom scrollbars, system font stack (no external font
   fetch, keeping the build hermetic).
+
+### Infrastructure expansion (this pass)
+- **Durable status:** `status.json` written per task (pending/running/
+  completed/failed + error + timestamps), read back by the API so status
+  survives process restarts; in-memory map kept as a hot-path cache.
+- **Failure surfacing:** agent errors persist a `failed` status with the
+  message, shown in the UI.
+- **Test suite:** Vitest with 16 unit tests; `npm test` script.
+- **CI:** GitHub Actions running lint + tests + build on push/PR.
+- **DRY refactors:** shared `lib/taskId.ts`, `lib/agent/text.ts`, `lib/plan.ts`
+  (used by both UI and API, and unit-tested).
+- **Hygiene:** removed `uuid` (→ `crypto.randomUUID`), deleted `tsconfg.json`
+  and `public/N`, added `engines`, MIT `LICENSE`, `robots.txt`, and refreshed
+  the README.
 
 ---
 

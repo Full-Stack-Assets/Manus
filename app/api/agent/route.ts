@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "crypto";
 import { agentApp, RECURSION_LIMIT } from "../../../lib/agent/graph";
 import { AgentState } from "../../../lib/agent/state";
+import { MemoryFileManager } from "../../../lib/agent/memory";
 import { taskStore } from "../../../lib/store";
+import { isValidTaskId } from "../../../lib/taskId";
 
 export const maxDuration = 60;
 
@@ -29,8 +31,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const taskId = uuidv4();
+    const taskId = randomUUID();
     taskStore.set(taskId, "pending");
+
+    // Persist an initial status so the task is observable before the graph runs.
+    const memory = new MemoryFileManager(taskId);
+    await memory.init();
+    await memory.writeStatus("pending");
 
     const initialState: AgentState = {
       taskId,
@@ -43,10 +50,21 @@ export async function POST(req: NextRequest) {
       messages: [],
     };
 
-    agentApp.invoke(initialState, { recursionLimit: RECURSION_LIMIT }).catch((err) => {
-      console.error(`Agent error for task ${taskId}:`, err);
-      taskStore.set(taskId, "failed");
-    });
+    agentApp
+      .invoke(initialState, { recursionLimit: RECURSION_LIMIT })
+      .catch(async (err) => {
+        console.error(`Agent error for task ${taskId}:`, err);
+        taskStore.set(taskId, "failed");
+        try {
+          await memory.init();
+          await memory.writeStatus(
+            "failed",
+            err instanceof Error ? err.message : String(err)
+          );
+        } catch (writeErr) {
+          console.error("Failed to persist failure status:", writeErr);
+        }
+      });
 
     return NextResponse.json({ taskId, status: "started" });
   } catch (error) {
@@ -58,10 +76,11 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const taskId = searchParams.get("taskId");
-  if (!taskId) {
-    return NextResponse.json({ error: "Missing taskId" }, { status: 400 });
+  if (!isValidTaskId(taskId)) {
+    return NextResponse.json({ error: "Invalid taskId" }, { status: 400 });
   }
 
-  const status = taskStore.get(taskId) || "pending";
-  return NextResponse.json({ taskId, status });
+  const durable = await new MemoryFileManager(taskId).readStatus();
+  const status = durable?.status || taskStore.get(taskId) || "pending";
+  return NextResponse.json({ taskId, status, error: durable?.error ?? null });
 }
