@@ -5,12 +5,13 @@ import { AgentState } from "../../../lib/agent/state";
 import { MemoryFileManager } from "../../../lib/agent/memory";
 import { taskStore } from "../../../lib/store";
 import { isValidTaskId } from "../../../lib/taskId";
+import { env } from "../../../lib/env";
 
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
-    if (!process.env.OPENAI_API_KEY) {
+    if (!env.openAiApiKey()) {
       return NextResponse.json(
         {
           error:

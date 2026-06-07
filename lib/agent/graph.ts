@@ -7,6 +7,7 @@ import { buildTools, TOOL_NAMES } from "./tools";
 import { taskStore } from "../store";
 import { asText } from "./text";
 import type { ToolCall } from "./state";
+import { env } from "../env";
 
 // --- Guardrails ------------------------------------------------------------
 // These bound total work (and therefore token spend) deterministically, which
@@ -22,7 +23,7 @@ export const RECURSION_LIMIT =
 
 function getLlm() {
   return new ChatOpenAI({
-    model: process.env.OPENAI_MODEL || "gpt-4o",
+    model: env.openAiModel(),
     temperature: 0,
   });
 }
@@ -36,7 +37,7 @@ async function planningNode(state: AgentState): Promise<Partial<AgentState>> {
   const llm = getLlm();
   const system = new SystemMessage(
     "You are an AI planning agent. Given a user's request, break it down into a numbered list of actionable steps. " +
-    `Each step should be clear and executable by an agent with tools: ${TOOL_NAMES.join(", ")}. ` +
+    `Each step should be clear and executable by an agent with tools: ${[...TOOL_NAMES].join(", ")}. ` +
     `Use at most ${MAX_PLAN_STEPS} steps; prefer fewer, well-scoped steps over many ambiguous ones. ` +
     "Return ONLY the list, one step per line, starting with a dash and space."
   );

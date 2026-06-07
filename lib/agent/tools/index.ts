@@ -4,12 +4,12 @@ import { webSearch } from "./websearch";
 import { executePython } from "./pythonExec";
 import { readFile, writeFile } from "./fileIO";
 
-export const TOOL_NAMES = [
+export const TOOL_NAMES: ReadonlySet<string> = new Set([
   "web_search",
   "execute_python",
   "read_file",
   "write_file",
-] as const;
+]);
 
 /**
  * Build the agent's tools as LangChain structured tools for the given task.

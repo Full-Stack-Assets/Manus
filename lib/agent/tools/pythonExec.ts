@@ -3,6 +3,7 @@
 // a safe stub so the prototype still runs end-to-end without arbitrary code
 // execution. Never run untrusted code in-process on the Node server.
 import { z } from "zod";
+import { env } from "../../env";
 
 const executePythonArgsSchema = z.object({
   code: z.string(),
@@ -26,7 +27,7 @@ export async function executePython(args: unknown): Promise<string> {
 
   const code = parsedArgs.data.code;
 
-  if (!process.env.E2B_API_KEY) {
+  if (!env.e2bApiKey()) {
     return disabledMessage(code);
   }
 
