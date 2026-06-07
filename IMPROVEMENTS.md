@@ -11,10 +11,11 @@ loop/cost + verification + final-output cluster). Everything else is open.
 
 ## 1. Code review findings
 
-> **Progress:** 21 of 26 findings are now done or partially done. Remaining
-> open: #6 (full durability — partial), #7 (native tool-calling — partial),
-> #15→done, #16 (sandbox), #17→done. Highest remaining value: a real sandbox
-> and the queue/worker for true multi-instance durability.
+> **Progress:** 22 of 26 findings done or partially done. Remaining open:
+> #6 (full multi-instance durability — partial; status now persisted), #16
+> (real `execute_python` sandbox), and `strict: true` (deferred under #4 due
+> to LangGraph generics). Highest remaining value: a real sandbox and a
+> queue/worker for true multi-instance durability.
 
 ### 🔴 High priority — bugs & security
 
@@ -42,9 +43,11 @@ loop/cost + verification + final-output cluster). Everything else is open.
    `status.json` (read back by the API, surviving restarts on a shared volume),
    with the in-memory map kept as a hot-path cache. _Open: queue/worker for
    true multi-instance execution._
-7. **Brittle tool-call parsing** — relies on the LLM emitting raw JSON. Made
-   tolerant of ```` ```json ```` fences as a stopgap **✅ partial**; _open:
-   move to native `llm.bindTools(...)`._
+7. **Brittle tool-call parsing** — replaced the free-form JSON parsing with
+   native `llm.bindTools(...)`: tools are LangChain structured tools with zod
+   schemas, the model emits validated `tool_calls`, and `taskId` is injected
+   server-side (never exposed to the model), keeping file access workspace-
+   scoped. **✅ Done**.
 8. **Empty-plan dead end** — an empty plan left the task stuck in `running`.
    Now routes straight to the summary node. **✅ Done**.
 9. **Unsafe `response.content as string` casts** — content can be structured

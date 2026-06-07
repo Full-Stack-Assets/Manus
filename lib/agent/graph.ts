@@ -3,9 +3,10 @@ import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { AgentState } from "./state";
 import { MemoryFileManager } from "./memory";
-import { tools } from "./tools";
+import { buildTools, TOOL_NAMES } from "./tools";
 import { taskStore } from "../store";
 import { asText } from "./text";
+import type { ToolCall } from "./state";
 
 // --- Guardrails ------------------------------------------------------------
 // These bound total work (and therefore token spend) deterministically, which
@@ -35,7 +36,7 @@ async function planningNode(state: AgentState): Promise<Partial<AgentState>> {
   const llm = getLlm();
   const system = new SystemMessage(
     "You are an AI planning agent. Given a user's request, break it down into a numbered list of actionable steps. " +
-    "Each step should be clear and executable by an agent with tools: web_search, execute_python, read_file, write_file. " +
+    `Each step should be clear and executable by an agent with tools: ${TOOL_NAMES.join(", ")}. ` +
     `Use at most ${MAX_PLAN_STEPS} steps; prefer fewer, well-scoped steps over many ambiguous ones. ` +
     "Return ONLY the list, one step per line, starting with a dash and space."
   );
@@ -69,62 +70,65 @@ async function executionNode(state: AgentState): Promise<Partial<AgentState>> {
     step
   );
 
-  const llm = getLlm();
+  // Native tool-calling: bind structured tools so the model emits validated
+  // tool_calls instead of free-form JSON we have to parse and hope is correct.
+  const taskTools = buildTools(state.taskId);
+  const toolByName = new Map(taskTools.map((t) => [t.name, t]));
+  const llm = getLlm().bindTools(taskTools);
+
   const system = new SystemMessage(
-    `You are an execution agent. You have access to these tools: ${Object.keys(tools).join(", ")}.\n` +
-      `To use a tool, respond with a JSON object: {"tool": "tool_name", "arguments": {...}}.\n` +
-      `Tool argument shapes:\n` +
-      `- web_search: {"query": string}\n` +
-      `- execute_python: {"code": string}\n` +
-      `- read_file: {"filePath": string}  (path relative to the task workspace)\n` +
-      `- write_file: {"filePath": string, "content": string}  (path relative to the task workspace)\n` +
-      `If no tool is needed, respond with plain text.\n` +
+    "You are an execution agent. Complete the current step. " +
+      "Call a tool when it helps; otherwise reply with the result as plain text. " +
       `Current step: ${step}`
   );
   const response = await llm.invoke([system, new HumanMessage(step)]);
-  const content = asText(response.content);
 
-  let toolCall;
-  let resultText = "";
-  try {
-    // Tolerate a fenced ```json block around the tool call.
-    const json = content.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
-    const data = JSON.parse(json);
-    if (data.tool && tools[data.tool]) {
-      const args = { taskId: state.taskId, ...(data.arguments || {}) };
-      const result = await tools[data.tool](args);
-      resultText = typeof result === "string" ? result : JSON.stringify(result);
-      toolCall = {
-        toolName: data.tool,
-        arguments: args,
-        result,
-        timestamp: new Date(),
-      };
-      await memory.appendFinding(`Tool ${data.tool} result: ${resultText}`);
+  const calls = response.tool_calls ?? [];
+  const recordedCalls: ToolCall[] = [];
+  const results: string[] = [];
+
+  for (const call of calls) {
+    const selected = toolByName.get(call.name);
+    let result: string;
+    if (selected) {
+      try {
+        result = String(await selected.invoke(call.args));
+      } catch (err) {
+        result = `Error running ${call.name}: ${
+          err instanceof Error ? err.message : String(err)
+        }`;
+      }
     } else {
-      toolCall = {
-        toolName: "llm_response",
-        arguments: { response: content },
-        result: content,
-        timestamp: new Date(),
-      };
-      resultText = content;
-      await memory.appendFinding(`Step ${state.currentStepIndex + 1}: ${content}`);
+      result = `Unknown tool requested: ${call.name}`;
     }
-  } catch {
-    toolCall = {
-      toolName: "llm_response",
-      arguments: { response: content },
-      result: content,
+    recordedCalls.push({
+      toolName: call.name,
+      arguments: call.args,
+      result,
       timestamp: new Date(),
-    };
-    resultText = content;
-    await memory.appendFinding(`Step ${state.currentStepIndex + 1}: ${content}`);
+    });
+    results.push(result);
+    await memory.appendFinding(`Tool ${call.name} result: ${result}`);
+  }
+
+  let resultText: string;
+  if (calls.length > 0) {
+    resultText = results.join("\n");
+  } else {
+    // No tool call — the model answered directly.
+    resultText = asText(response.content);
+    recordedCalls.push({
+      toolName: "llm_response",
+      arguments: { response: resultText },
+      result: resultText,
+      timestamp: new Date(),
+    });
+    await memory.appendFinding(`Step ${state.currentStepIndex + 1}: ${resultText}`);
   }
 
   return {
     findings: [...state.findings, resultText],
-    toolCalls: [...state.toolCalls, toolCall],
+    toolCalls: [...state.toolCalls, ...recordedCalls],
     messages: [response],
   };
 }
